@@ -1,9 +1,8 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
-using System.Text;
-using System.Threading;
-
+using ServerBrains.Routes;
+using ServerBrains.Sessions;
 
 namespace ServerBrains;
 /// <summary>
@@ -13,7 +12,7 @@ public class Server
 {
   private static HttpListener? listener;
   public static Router router = new Router();
-  public static Func<ServerError, string?> onError;
+  public static Func<ServerError, string> onError;
 
   /// <summary>
   /// Returns a list of IP addresses assigned to localhsot network 
@@ -72,8 +71,11 @@ public class Server
   /// </summary>
   private static async void StartConnectionListener(HttpListener listener)
   {
+    //Wait for a connection. Return to caller while we wait
     HttpListenerContext context = await listener.GetContextAsync();
     sem.Release();
+    Session session = new SessionManager().GetSession(context.Request.RemoteEndPoint);
+
     HttpListenerRequest request = context.Request;
     string? path = request.RawUrl?.Split("?")[0];
     string verb = request.HttpMethod;
@@ -84,17 +86,21 @@ public class Server
     else
       parms = request.RawUrl?.Split("?")[1];
 
-    Dictionary<string, string> kvParams = GetKeyValues(parms);
-    string data = new StreamReader(context.Request.InputStream,
-    context.Request.ContentEncoding).ReadToEnd();
+    Dictionary<string, string>? kvParams = GetKeyValues(parms);
+    string data = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding)
+    .ReadToEnd();
+
     kvParams = GetKeyValues(data, kvParams);
     Log(kvParams);
-    var responsePckt = router.Route(verb, path, kvParams);
-    if (responsePckt.Error != ServerError.OK)
-    {
-      responsePckt.Redirect = onError(responsePckt.Error);
-    }
-    Respond(context.Request, context.Response, responsePckt);
+    ResponsePacket resp = router.Route(verb, path, kvParams);
+
+    //Update last connection time for session
+    session.UpdateLastConnectionTime();
+
+    if (resp.Error != ServerError.OK)
+      resp.Redirect = onError(resp.Error);
+
+    Respond(context.Request, context.Response, resp);
     Log(context.Request);
   }
 
@@ -104,7 +110,7 @@ public class Server
     if (string.IsNullOrEmpty(resp.Redirect))
     {
       response.ContentType = resp.ContentType;
-      response.ContentLength64 = resp.Data.Length;
+      response.ContentLength64 = resp.Data!.Length;
       response.OutputStream.Write(resp.Data, 0, resp.Data.Length);
       response.ContentEncoding = resp.Encoding;
       response.StatusCode = (int)HttpStatusCode.OK;
@@ -117,7 +123,7 @@ public class Server
     response.OutputStream.Close();
   }
 
-  private static Dictionary<string, string> GetKeyValues(string? paramString)
+  private static Dictionary<string, string>? GetKeyValues(string? paramString)
   {
     if (paramString is null)
       return null;
@@ -130,7 +136,7 @@ public class Server
     return keyValues;
   }
 
-  private static Dictionary<string, string> GetKeyValues(string data, Dictionary<string, string> kv = null)
+  private static Dictionary<string, string> GetKeyValues(string data, Dictionary<string, string>? kv = null)
   {
     if (kv == null)
     {

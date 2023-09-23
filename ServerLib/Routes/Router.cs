@@ -1,9 +1,6 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Mime;
 using System.Text;
 
-namespace ServerBrains;
+namespace ServerBrains.Routes;
 
 public class Router
 {
@@ -101,6 +98,13 @@ public class Router
     }
   }
 
+/// <summary>
+/// Recognizes html files and loads them
+/// </summary>
+/// <param name="fullPath"></param>
+/// <param name="ext"></param>
+/// <param name="extInfo"></param>
+/// <returns></returns>
   private ResponsePacket PageLoader(string fullPath, string ext, ExtensionInfo extInfo)
   {
     ResponsePacket ret;
@@ -136,11 +140,11 @@ public class Router
     {
       ext = path.Split('.').TakeLast(1).First();
     }
-    ExtensionInfo? extInfo;
+    ExtensionInfo extInfo;
     ResponsePacket? response = null;
     verb = verb.ToLower();
 
-    if (extFolderMap.TryGetValue(ext, out extInfo))
+    if (extFolderMap.TryGetValue(ext, out extInfo!))
     {
       string newPath = path.Replace("/", "\\");
       string fullPath;
